@@ -91,6 +91,7 @@ pub fn parse(text: &str) -> Vec<Element> {
                     }
                     _ => continue,
                 };
+                let r = if matches!(kind, Kind::ListItem { .. }) { item_start(text, &r)..r.end } else { r };
                 let markers = match kind {
                     Kind::Quote => quote_markers(text, &r, &mut quote_consumed),
                     Kind::ListItem { ordered: false } => vec![bullet_marker(text, &r)],
@@ -222,9 +223,16 @@ fn with_break(text: &str, r: Range<usize>) -> Range<usize> {
     }
 }
 
+/// pulldown-cmark starts a tab-indented nested list item at the line break
+/// before it; the item really starts at its bullet or number.
+fn item_start(text: &str, r: &Range<usize>) -> usize {
+    let skip = text.as_bytes()[r.clone()].iter().take_while(|&&b| matches!(b, b'\r' | b'\n' | b' ' | b'\t'));
+    (r.start + skip.count()).min(r.end)
+}
+
 fn bullet_marker(text: &str, r: &Range<usize>) -> Marker {
     let le = line_end(text, r.start);
-    let after = r.start + 1;
+    let after = (r.start + 1).min(le);
     let spaces = text.as_bytes()[after..le].iter().take_while(|&&b| is_blank(b)).count();
     Marker { range: r.start..after + spaces, scope: r.start..le }
 }
@@ -424,6 +432,22 @@ mod tests {
             ]
         );
         assert_eq!(scopes("- a\n  - b\n")[0], vec!["- a"]);
+    }
+
+    #[test]
+    fn tab_indented_nested_items() {
+        // pulldown-cmark starts these items at the line break before them.
+        assert_eq!(
+            view("- a\n\t- b"),
+            vec![
+                (Kind::ListItem { ordered: false }, "- a\n\t- b", vec!["- "]),
+                (Kind::ListItem { ordered: false }, "- b", vec!["- "]),
+            ]
+        );
+        assert_eq!(view("* a\n\t* b")[1], (Kind::ListItem { ordered: false }, "* b", vec!["* "]));
+        assert_eq!(view("- a\n\t- [ ] b")[1], (Kind::Task { checked: false }, "- [ ] b", vec!["- [ ] "]));
+        assert_eq!(scopes("- a\n\t- b")[1], vec!["- b"]);
+        assert!(parse("*\n\t+").iter().all(|e| !e.markers.is_empty()));
     }
 
     #[test]
