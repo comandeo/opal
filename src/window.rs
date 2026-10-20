@@ -1,6 +1,7 @@
 //! The application window: one document, autosave and dialogs.
 
 use std::cell::{Cell, RefCell};
+use std::io;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -126,7 +127,7 @@ fn install_actions(ui: &Rc<Ui>, app: &gtk::Application) {
     };
     add("save", "<Control>s", |ui| {
         if ui.path.borrow().is_some() {
-            save(ui, false);
+            save(ui, false, Report::Always);
         } else {
             save_as(ui, |_| {});
         }
@@ -211,7 +212,7 @@ fn schedule_autosave(ui: &Rc<Ui>) {
         let Some(ui) = weak.upgrade() else { return };
         ui.autosave.borrow_mut().take(); // this source is finishing
         if ui.view.buffer().is_modified() {
-            save(&ui, false);
+            save(&ui, false, Report::Once);
         }
     });
     *ui.autosave.borrow_mut() = Some(id);
@@ -223,10 +224,30 @@ fn cancel_autosave(ui: &Ui) {
     }
 }
 
-/// Saves to the current path; returns whether the text is now on disk.
-fn save(ui: &Rc<Ui>, force: bool) -> bool {
+/// How a failed save is reported.
+#[derive(Clone, Copy, PartialEq)]
+enum Report {
+    /// Autosave: one alert per series of failures.
+    Once,
+    /// The user asked to save: every time.
+    Always,
+    /// The caller offers its own way out.
+    Never,
+}
+
+enum Saved {
+    Yes,
+    /// The file changed on disk; the conflict dialog is shown.
+    Conflict,
+    Failed(io::Error),
+}
+
+/// Saves to the current path.
+fn save(ui: &Rc<Ui>, force: bool, report: Report) -> Saved {
     cancel_autosave(ui);
-    let Some(path) = ui.path.borrow().clone() else { return false };
+    let Some(path) = ui.path.borrow().clone() else {
+        return Saved::Failed(io::Error::other("у документа нет имени"));
+    };
     let text = ui.view.text();
     match document::save(&path, &text, ui.stamp.get(), force) {
         Ok(SaveOutcome::Saved(stamp)) => {
@@ -235,21 +256,21 @@ fn save(ui: &Rc<Ui>, force: bool) -> bool {
             ui.paused.set(false);
             ui.view.buffer().set_modified(false);
             update_title(ui);
-            true
+            Saved::Yes
         }
         Ok(SaveOutcome::Conflict) => {
             ui.paused.set(true);
             update_title(ui);
             ask_conflict(ui);
-            false
+            Saved::Conflict
         }
         Err(e) => {
             let first = !ui.failed.replace(true);
             update_title(ui);
-            if first {
+            if report == Report::Always || (report == Report::Once && first) {
                 alert(ui, "Не удалось сохранить", &e.to_string());
             }
-            false
+            Saved::Failed(e)
         }
     }
 }
@@ -273,7 +294,7 @@ fn ask_conflict(ui: &Rc<Ui>) {
                 }
             }
             Ok(1) => {
-                save(&ui, true);
+                save(&ui, true, Report::Always);
             }
             _ => {} // dismissed: stays paused; Ctrl+S asks again
         }
@@ -294,32 +315,43 @@ fn save_as(ui: &Rc<Ui>, next: impl FnOnce(&Rc<Ui>) + 'static) {
         *ui.path.borrow_mut() = Some(document::resolve(&path));
         ui.stamp.set(None);
         // The dialog already confirmed overwriting an existing file.
-        if save(&ui, true) {
+        if let Saved::Yes = save(&ui, true, Report::Always) {
             next(&ui);
         }
     });
 }
 
 /// Saves the current document, or asks what to do with an untitled one, then
-/// runs `next`. If saving fails, `next` does not run (the dialog explains why).
+/// runs `next`. If saving fails, the user picks: save elsewhere, go on without
+/// saving, or stay.
 fn finish_document(ui: &Rc<Ui>, next: impl FnOnce(&Rc<Ui>) + 'static) {
     let buffer = ui.view.buffer();
     if !buffer.is_modified() {
         return next(ui);
     }
     if ui.path.borrow().is_some() {
-        if save(ui, false) {
-            next(ui);
+        match save(ui, false, Report::Never) {
+            Saved::Yes => next(ui),
+            Saved::Conflict => {} // the conflict dialog is up
+            Saved::Failed(e) => {
+                let detail = format!("{e}. Сохранить документ в другом месте или продолжить без сохранения?");
+                ask_unsaved(ui, "Не удалось сохранить документ", &detail, "Сохранить как…", next);
+            }
         }
         return;
     }
     if buffer.char_count() == 0 {
         return next(ui);
     }
+    ask_unsaved(ui, "Сохранить документ?", "У документа нет имени, и он не сохранён.", "Сохранить", next);
+}
+
+/// «save» / «Не сохранять» / «Отмена»; saving goes through «Сохранить как».
+fn ask_unsaved(ui: &Rc<Ui>, message: &str, detail: &str, save: &str, next: impl FnOnce(&Rc<Ui>) + 'static) {
     let dialog = gtk::AlertDialog::builder()
-        .message("Сохранить документ?")
-        .detail("У документа нет имени, и он не сохранён.")
-        .buttons(["Сохранить", "Не сохранять", "Отмена"])
+        .message(message)
+        .detail(detail)
+        .buttons([save, "Не сохранять", "Отмена"])
         .cancel_button(2)
         .default_button(0)
         .modal(true)
