@@ -1,0 +1,16 @@
+[package]
+name = "opal"
+version = "0.1.0"
+edition = "2024"
+description = "Минималистичный Markdown-редактор"
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
