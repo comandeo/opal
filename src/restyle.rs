@@ -122,9 +122,12 @@ impl Styler {
             .take(max_tail)
             .take_while(|(o, n)| shift.same(o, n))
             .count();
-        let mut dirty = prefix..shift.new_tail;
-        let changed_old = old[head..old.len() - tail].iter().map(|e| shift.range(&e.range));
-        let changed_new = elements[head..elements.len() - tail].iter().map(|e| e.range.clone());
+        // Inside a run of equal chars (`\n\n`, `***`) the edit may have been
+        // anywhere in the run; GTK moved the tags around it accordingly.
+        let (earliest, _) = suffix_first_affixes(&self.text, text);
+        let mut dirty = earliest..shift.new_tail;
+        let changed_old = old[head..old.len() - tail].iter().map(|e| shift.range(&extent(e)));
+        let changed_new = elements[head..elements.len() - tail].iter().map(extent);
         for r in changed_old.chain(changed_new) {
             dirty.start = dirty.start.min(r.start);
             dirty.end = dirty.end.max(r.end);
@@ -145,14 +148,15 @@ impl Styler {
             ops.clear = Some(dirty.clone());
             self.add_styles(&mut ops, &dirty);
         }
-        // Markers outside the dirty span kept their tags: fix only their visibility.
-        let outside = |r: &Range<usize>| dirty.is_empty() || r.end <= dirty.start || r.start >= dirty.end;
+        // Markers not entirely in the dirty span kept (some of) their tags: fix
+        // their visibility over the whole marker.
+        let inside = |r: &Range<usize>| !dirty.is_empty() && dirty.start <= r.start && r.end <= dirty.end;
         let now: HashSet<&Range<usize>> = self.visible.iter().collect();
         let before: HashSet<&Range<usize>> = old_visible.iter().collect();
-        for r in old_visible.iter().filter(|r| outside(r) && !now.contains(r)) {
+        for r in old_visible.iter().filter(|r| !inside(r) && !now.contains(r)) {
             ops.add.push((Style::Hidden, r.clone()));
         }
-        for r in self.visible.iter().filter(|r| outside(r) && !before.contains(r)) {
+        for r in self.visible.iter().filter(|r| !inside(r) && !before.contains(r)) {
             ops.remove.push((Style::Hidden, r.clone()));
         }
         ops
@@ -177,7 +181,7 @@ impl Styler {
     fn add_styles(&self, ops: &mut TagOps, within: &Range<usize>) {
         let visible: HashSet<&Range<usize>> = self.visible.iter().collect();
         let touches = |r: &Range<usize>| r.start < within.end && within.start < r.end;
-        for e in self.elements.iter().filter(|e| touches(&e.range)) {
+        for e in self.elements.iter().filter(|e| touches(&extent(e))) {
             if let Some(style) = element_style(&e.kind) {
                 ops.add.push((style, e.range.clone()));
             }
@@ -189,6 +193,12 @@ impl Styler {
             }
         }
     }
+}
+
+/// Bytes an element's tags cover: its range plus markers sticking out of it (a
+/// closing fence or a setext underline is hidden with its line break).
+fn extent(e: &Element) -> Range<usize> {
+    e.markers.iter().fold(e.range.clone(), |r, m| r.start.min(m.range.start)..r.end.max(m.range.end))
 }
 
 /// Maps offsets of the old text to the new one around an edit that replaced
@@ -228,6 +238,22 @@ impl Shift {
     }
 }
 
+/// Like `common_affixes`, but the suffix is taken first, so the prefix is the
+/// earliest place where the edit can have started.
+fn suffix_first_affixes(a: &str, b: &str) -> (usize, usize) {
+    let (ab, bb) = (a.as_bytes(), b.as_bytes());
+    let max = ab.len().min(bb.len());
+    let mut suffix = ab.iter().rev().zip(bb.iter().rev()).take(max).take_while(|(x, y)| x == y).count();
+    while !a.is_char_boundary(a.len() - suffix) {
+        suffix -= 1;
+    }
+    let mut prefix = ab.iter().zip(bb).take(max - suffix).take_while(|(x, y)| x == y).count();
+    while !a.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    (prefix, suffix)
+}
+
 /// Lengths in bytes of the common prefix and suffix of `a` and `b`; they never
 /// overlap and always end on char boundaries.
 pub fn common_affixes(a: &str, b: &str) -> (usize, usize) {
@@ -247,10 +273,116 @@ pub fn common_affixes(a: &str, b: &str) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn sorted(mut v: Vec<(Style, Range<usize>)>) -> Vec<(Style, Range<usize>)> {
         v.sort_by_key(|(s, r)| (r.start, r.end, *s));
         v
+    }
+
+    /// The tags GTK holds: the styles on every byte of the text.
+    type State = Vec<BTreeSet<Style>>;
+    type Inherit = fn(&BTreeSet<Style>, &BTreeSet<Style>) -> BTreeSet<Style>;
+
+    fn apply(state: &mut State, ops: &TagOps) {
+        if let Some(r) = &ops.clear {
+            r.clone().for_each(|b| state[b].clear());
+        }
+        for (style, r) in &ops.remove {
+            r.clone().for_each(|b| {
+                state[b].remove(style);
+            });
+        }
+        for (style, r) in &ops.add {
+            r.clone().for_each(|b| {
+                state[b].insert(*style);
+            });
+        }
+    }
+
+    /// GTK keeps the tags of the bytes an edit leaves alone and drops the
+    /// deleted ones; inserted bytes get what `inherit` picks from the tags of
+    /// the bytes before and after them.
+    fn edited(state: &State, at: usize, deleted: usize, inserted: usize, inherit: Inherit) -> State {
+        let none = BTreeSet::new();
+        let before = if at > 0 { &state[at - 1] } else { &none };
+        let after = state.get(at + deleted).unwrap_or(&none);
+        let mut out = state[..at].to_vec();
+        out.extend(std::iter::repeat_n(inherit(before, after), inserted));
+        out.extend_from_slice(&state[at + deleted..]);
+        out
+    }
+
+    /// Incremental styling after every single keystroke at every cursor
+    /// position must leave exactly the tags of a fresh full styling.
+    #[test]
+    fn incremental_styling_matches_full_restyle() {
+        let snippets = [
+            "# Title\n\ntext",
+            "> q1\n> q2\n\nafter",
+            "**bold** and *em* and ~~s~~ `c`",
+            "```\ncode\n```\n\nx",
+            "```rust\na\n```",
+            "Setext\n===\n\nnext",
+            "Title\n---\nmore",
+            "- a\n  - b\n- [ ] t\n- [x] d\n\n1. n\n",
+            "- a\n\t- b",
+            "para\n\n---\n\nend",
+            "[link **b**](http://u) <https://a.b>\n",
+            "***x*** __y__ _z_",
+            "Привет 🙂 **мир**\n",
+            "# T\r\n\r\n**b**\r\n",
+            "    code\n\ntext",
+            "> - [ ] task\n> > nested\n",
+            "a\n\n\n\nb **c**\n\n",
+        ];
+        let keys = [
+            "\n", "*", "**", "_", "`", "```", "#", "# ", " ", "x", ">", "> ", "-", "- ", "~", "\t", "[", "]", "(",
+            ")", "=", "\r\n", "🙂", "ж",
+        ];
+        let models: [(&str, Inherit); 2] = [
+            ("inside", |a, b| a.intersection(b).copied().collect()),
+            ("left", |a, _| a.clone()),
+        ];
+        let mut failures = Vec::new();
+        for text in snippets {
+            let positions: Vec<usize> = (0..=text.len())
+                .filter(|&p| text.is_char_boundary(p) && !(text[..p].ends_with('\r') && text[p..].starts_with('\n')))
+                .collect();
+            for (i, &pos) in positions.iter().enumerate() {
+                let mut edits: Vec<(String, usize, usize, usize, String)> = keys
+                    .iter()
+                    .map(|k| (format!("{}{k}{}", &text[..pos], &text[pos..]), pos, 0, k.len(), format!("type {k:?}")))
+                    .collect();
+                if i > 0 {
+                    let p0 = positions[i - 1];
+                    edits.push((format!("{}{}", &text[..p0], &text[pos..]), p0, pos - p0, 0, "Backspace".into()));
+                }
+                if let Some(&p1) = positions.get(i + 1) {
+                    edits.push((format!("{}{}", &text[..pos], &text[p1..]), pos, p1 - pos, 0, "Delete".into()));
+                }
+                for (new, at, deleted, inserted, what) in edits {
+                    let cursor = at + inserted;
+                    for (model, inherit) in models {
+                        let mut styler = Styler::new();
+                        let mut state = vec![BTreeSet::new(); text.len()];
+                        apply(&mut state, &styler.reset(text, pos..pos));
+                        let mut state = edited(&state, at, deleted, inserted, inherit);
+                        apply(&mut state, &styler.text_changed(&new, cursor..cursor));
+                        let mut expected = vec![BTreeSet::new(); new.len()];
+                        apply(&mut expected, &Styler::new().reset(&new, cursor..cursor));
+                        if state != expected {
+                            let byte = (0..new.len()).find(|&b| state[b] != expected[b]).unwrap();
+                            failures.push(format!(
+                                "{text:?} at {pos}, {what} ({model}): byte {byte} of {new:?} has {:?}, full restyle {:?}",
+                                state[byte], expected[byte]
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{} mismatches, e.g.:\n{}", failures.len(), failures[..failures.len().min(12)].join("\n"));
     }
 
     #[test]
