@@ -18,6 +18,8 @@ pub struct Config {
     /// Typewriter mode at startup.
     pub typewriter: bool,
     pub theme: Theme,
+    /// Typographic replacements while typing: `--` → `—`, `"` → «».
+    pub autocorrect: bool,
 }
 
 impl Default for Config {
@@ -28,6 +30,7 @@ impl Default for Config {
             mono_font: "Monospace 12".to_string(),
             typewriter: true,
             theme: Theme::Light,
+            autocorrect: true,
         }
     }
 }
@@ -60,13 +63,10 @@ pub fn parse(text: &str) -> (Config, Vec<String>) {
                 *slot = value.to_string();
                 true
             }
-            "typewriter" => match value {
-                "true" => {
-                    cfg.typewriter = true;
-                    true
-                }
-                "false" => {
-                    cfg.typewriter = false;
+            "typewriter" | "autocorrect" => match value {
+                "true" | "false" => {
+                    let slot = if key == "typewriter" { &mut cfg.typewriter } else { &mut cfg.autocorrect };
+                    *slot = value == "true";
                     true
                 }
                 _ => false,
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn all_keys() {
-        let text = "# comment\ncolumn_width = 80\nfont = Literata 15  # trailing comment\nmono_font=JetBrains Mono 11\ntypewriter = false\ntheme = dark\n";
+        let text = "# comment\ncolumn_width = 80\nfont = Literata 15  # trailing comment\nmono_font=JetBrains Mono 11\ntypewriter = false\ntheme = dark\nautocorrect = false\n";
         let (cfg, warnings) = parse(text);
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(
@@ -149,8 +149,17 @@ mod tests {
                 mono_font: "JetBrains Mono 11".into(),
                 typewriter: false,
                 theme: Theme::Dark,
+                autocorrect: false,
             }
         );
+    }
+
+    #[test]
+    fn autocorrect_is_on_by_default() {
+        assert!(Config::default().autocorrect);
+        let (cfg, warnings) = parse("autocorrect = maybe\n");
+        assert!(cfg.autocorrect);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
     }
 
     #[test]

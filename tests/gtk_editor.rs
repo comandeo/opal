@@ -30,6 +30,10 @@ fn main() {
         ("checkbox_toggles", checkbox_toggles),
         ("link_lookup", link_lookup),
         ("glyphs_sit_left_of_the_text", glyphs_sit_left_of_the_text),
+        ("autocorrect_while_typing", autocorrect_while_typing),
+        ("undo_brings_typed_text_back", undo_brings_typed_text_back),
+        ("autocorrect_leaves_code_alone", autocorrect_leaves_code_alone),
+        ("autocorrect_can_be_switched_off", autocorrect_can_be_switched_off),
     ]);
 }
 
@@ -314,4 +318,55 @@ fn glyphs_sit_left_of_the_text() {
         assert!(right <= text_x, "line {line}: the box ends at {right}, the text starts at {text_x}");
     }
     window.destroy();
+}
+
+/// Types like the keyboard does: one interactive insertion per key, each in a
+/// user action, letting the main loop run in between.
+fn type_keys(view: &OpalView, keys: &str) {
+    let buffer = view.buffer();
+    for ch in keys.chars() {
+        buffer.begin_user_action();
+        buffer.insert_interactive_at_cursor(&ch.to_string(), true);
+        buffer.end_user_action();
+        common::pump_for(Duration::from_millis(5));
+    }
+}
+
+fn autocorrect_while_typing() {
+    let view = view_with("");
+    type_keys(&view, "Он сказал -- \"да\". \"Цитата \"внутри\" цитаты\"");
+    assert_eq!(view.text(), "Он сказал — «да». «Цитата „внутри“ цитаты»");
+}
+
+fn undo_brings_typed_text_back() {
+    let view = view_with("");
+    let buffer = view.buffer();
+    type_keys(&view, "a--");
+    assert_eq!(view.text(), "a—");
+    buffer.undo();
+    common::pump_for(Duration::from_millis(20));
+    assert_eq!(view.text(), "a--");
+    type_keys(&view, "-");
+    assert_eq!(view.text(), "a---", "a third hyphen keeps the restored --");
+    type_keys(&view, " \"");
+    assert_eq!(view.text(), "a--- «");
+    buffer.undo();
+    common::pump_for(Duration::from_millis(20));
+    assert_eq!(view.text(), "a--- \"", "undo must not be corrected again");
+}
+
+fn autocorrect_leaves_code_alone() {
+    let view = view_with("`ab`\n\n```\nx\n```\n");
+    place(&view, 2);
+    type_keys(&view, "--");
+    place(&view, 13); // after `x` in the code block
+    type_keys(&view, "\"");
+    assert_eq!(view.text(), "`a--b`\n\n```\nx\"\n```\n");
+}
+
+fn autocorrect_can_be_switched_off() {
+    let view = OpalView::new(&Config { autocorrect: false, ..Config::default() });
+    view.load_text("");
+    type_keys(&view, "-- \"");
+    assert_eq!(view.text(), "-- \"");
 }

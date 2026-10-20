@@ -1,5 +1,6 @@
 //! opal — a minimalist Markdown editor.
 
+pub mod autocorrect;
 pub mod config;
 pub mod document;
 pub mod editor;

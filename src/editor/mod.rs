@@ -4,6 +4,7 @@ mod decor;
 mod imp;
 mod margins;
 mod tags;
+mod typing;
 
 use std::ops::Range;
 use std::time::Instant;
@@ -53,6 +54,8 @@ impl OpalView {
         self.connect_buffer_signals();
         self.connect_mouse_tracking();
         self.connect_clicks();
+        imp.autocorrect.set(config.autocorrect);
+        self.connect_autocorrect();
     }
 
     /// Replaces the whole text: no undo history, cursor at the start, unmodified.

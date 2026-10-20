@@ -34,6 +34,12 @@ pub struct OpalView {
     /// Check boxes drawn in the last frame: rectangle in buffer coordinates and
     /// byte offset of the character between the brackets.
     pub checkboxes: RefCell<Vec<(gdk::Rectangle, usize)>>,
+    /// Typographic replacements while typing are on.
+    pub autocorrect: Cell<bool>,
+    /// Marks right after typed `-` and `"` waiting to be looked at.
+    pub typed: RefCell<Vec<gtk::TextMark>>,
+    /// Inside undo or redo: re-inserted text is not corrected.
+    pub replaying: Cell<bool>,
 }
 
 #[glib::object_subclass]
