@@ -85,13 +85,17 @@ pub fn save(path: &Path, text: &str, expected: Option<Stamp>, force: bool) -> io
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
     let name = path.file_name().ok_or_else(|| io::Error::other("в пути нет имени файла"))?;
     let tmp = dir.join(format!(".{}.opal-tmp", name.to_string_lossy()));
+    // Whatever sits at the temp name (a leftover of a crash, or a planted link)
+    // is removed, never written through; removing a link leaves its target.
+    let _ = fs::remove_file(&tmp);
     let result = (|| {
-        let mut file = fs::File::create(&tmp)?;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        // Before any text is written, so a private file is never readable by others.
+        if current.is_some() {
+            file.set_permissions(fs::metadata(path)?.permissions())?;
+        }
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        if current.is_some() {
-            fs::set_permissions(&tmp, fs::metadata(path)?.permissions())?;
-        }
         fs::rename(&tmp, path)
     })();
     if let Err(e) = result {
@@ -179,6 +183,19 @@ mod tests {
         saved(save(&p, "new", st, false).unwrap());
         assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+    }
+
+    #[test]
+    fn save_does_not_follow_a_link_at_the_temp_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.md");
+        let victim = dir.path().join("victim");
+        fs::write(&victim, "precious").unwrap();
+        symlink(&victim, dir.path().join(".a.md.opal-tmp")).unwrap();
+        saved(save(&p, "mine", None, false).unwrap());
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "precious");
+        assert!(fs::symlink_metadata(&p).unwrap().file_type().is_file());
+        assert_eq!(fs::read_to_string(&p).unwrap(), "mine");
     }
 
     #[test]
