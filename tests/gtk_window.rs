@@ -6,7 +6,7 @@ mod common;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtk::gio;
 use gtk::prelude::*;
@@ -40,6 +40,7 @@ fn main() {
         ("theme_follows_config", theme_follows_config),
         ("window_starts_without_gtk_warnings", window_starts_without_gtk_warnings),
         ("binary_draws_with_cairo_by_default", binary_draws_with_cairo_by_default),
+        ("launch_returns_to_the_shell_at_once", launch_returns_to_the_shell_at_once),
     ]);
 }
 
@@ -274,4 +275,42 @@ fn binary_draws_with_cairo_by_default() {
     assert!(default.contains("Using renderer 'GskCairoRenderer'"), "{default}");
     let chosen = stderr(Some("vulkan"));
     assert!(chosen.contains("GSK_RENDERER=vulkan set"), "{chosen}");
+}
+
+/// From a shell, `opal file` gives the prompt back at once; the editor lives on
+/// in a copy detached from the terminal.
+fn launch_returns_to_the_shell_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = note(&dir);
+    let mut opal = std::process::Command::new(env!("CARGO_BIN_EXE_opal"))
+        .arg(&path)
+        .env_remove("OPAL_FOREGROUND")
+        .env_remove("OPAL_BENCH")
+        .spawn()
+        .expect("opal starts");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let status = loop {
+        if let Some(status) = opal.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = opal.kill();
+            let _ = opal.wait();
+            panic!("opal did not return to the shell");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "{status}");
+    let editors = || {
+        let out = std::process::Command::new("pgrep").arg("-f").arg(&path).output().expect("pgrep runs");
+        String::from_utf8_lossy(&out.stdout).split_whitespace().map(str::to_string).collect::<Vec<_>>()
+    };
+    let mut pids = Vec::new();
+    common::wait_until("the detached editor", || {
+        pids = editors();
+        !pids.is_empty()
+    });
+    for pid in pids {
+        let _ = std::process::Command::new("kill").arg(&pid).status();
+    }
 }
