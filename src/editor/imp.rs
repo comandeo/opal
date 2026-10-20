@@ -50,4 +50,9 @@ impl WidgetImpl for OpalView {
         self.obj().update_margins(width, height);
     }
 }
-impl TextViewImpl for OpalView {}
+impl TextViewImpl for OpalView {
+    fn snapshot_layer(&self, layer: gtk::TextViewLayer, snapshot: gtk::Snapshot) {
+        self.parent_snapshot_layer(layer, snapshot.clone());
+        self.obj().draw_decorations(layer, &snapshot);
+    }
+}

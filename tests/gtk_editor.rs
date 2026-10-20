@@ -26,6 +26,9 @@ fn main() {
         ("large_paste_does_not_hang", large_paste_does_not_hang),
         ("column_is_centred", column_is_centred),
         ("typewriter_keeps_cursor_line_centred", typewriter_keeps_cursor_line_centred),
+        ("decorations_render", decorations_render),
+        ("checkbox_toggles", checkbox_toggles),
+        ("link_lookup", link_lookup),
     ]);
 }
 
@@ -249,4 +252,43 @@ fn typewriter_keeps_cursor_line_centred() {
     common::settle();
     assert!(view.top_margin() > 2 * view.line_height());
     window.destroy();
+}
+
+fn decorations_render() {
+    let text = "# Заголовок\n\n> цитата\n> вторая строка\n\n- пункт\n- [ ] задача\n- [x] готово\n\n---\n\n```\nкод\n```\n\nконец";
+    let view = view_with(text);
+    let window = common::show(&view);
+    place(&view, view.buffer().char_count());
+    common::settle();
+    let path = concat!(env!("CARGO_TARGET_TMPDIR"), "/opal-decorations.png");
+    common::save_png(&view, path);
+    println!("    screenshot: {path}");
+    assert_eq!(view.checkbox_rects().len(), 2);
+    window.destroy();
+}
+
+fn checkbox_toggles() {
+    let view = view_with("- [ ] задача\n\nконец");
+    let window = common::show(&view);
+    place(&view, view.buffer().char_count());
+    common::settle();
+    let boxes = view.checkbox_rects();
+    assert_eq!(boxes.len(), 1);
+    let (rect, byte) = boxes[0];
+    // The hidden `- [ ] ` has no width: the text starts where it begins. (GTK
+    // reports bogus positions for chars after a hidden run, so not 'з' itself.)
+    let text_x = view.iter_location(&view.buffer().iter_at_offset(0)).x();
+    assert!(rect.x() + rect.width() <= text_x, "the box is drawn left of the text");
+    view.toggle_task(byte);
+    assert_eq!(view.text(), "- [x] задача\n\nконец");
+    view.toggle_task(byte);
+    assert_eq!(view.text(), "- [ ] задача\n\nконец");
+    window.destroy();
+}
+
+fn link_lookup() {
+    let view = view_with("see [the site](http://example.org) and <me@x.org>");
+    assert_eq!(view.link_at(6).as_deref(), Some("http://example.org"));
+    assert_eq!(view.link_at(42).as_deref(), Some("me@x.org"));
+    assert_eq!(view.link_at(1), None);
 }

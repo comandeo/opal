@@ -1,5 +1,6 @@
 //! The Markdown text view: styling, hidden markup, typewriter scrolling.
 
+mod decor;
 mod imp;
 mod margins;
 mod tags;
@@ -15,6 +16,8 @@ use crate::config::Config;
 use crate::offsets::CharIndex;
 use crate::restyle::{Style, TagOps};
 use tags::{Palette, Tags};
+
+pub use decor::link_uri;
 
 glib::wrapper! {
     pub struct OpalView(ObjectSubclass<imp::OpalView>)
@@ -49,6 +52,7 @@ impl OpalView {
         imp.bench.set(std::env::var("OPAL_BENCH").as_deref() == Ok("restyle"));
         self.connect_buffer_signals();
         self.connect_mouse_tracking();
+        self.connect_clicks();
     }
 
     /// Replaces the whole text: no undo history, cursor at the start, unmodified.
