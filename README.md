@@ -37,6 +37,8 @@ typewriter = true
 theme = light            # light | dark
 ```
 
+Рисует процессором (рендерер GTK `cairo`): так окно появляется быстрее и не загружаются драйверы видеокарты. Другой рендерер можно выбрать как обычно в GTK: `GSK_RENDERER=vulkan opal`.
+
 ## Тесты
 
 `cargo test --lib` — логика; `cargo test --test gtk_editor` и `cargo test --test gtk_window` открывают окна и требуют дисплей.

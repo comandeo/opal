@@ -39,6 +39,7 @@ fn main() {
         ("typewriter_action_toggles", typewriter_action_toggles),
         ("theme_follows_config", theme_follows_config),
         ("window_starts_without_gtk_warnings", window_starts_without_gtk_warnings),
+        ("binary_draws_with_cairo_by_default", binary_draws_with_cairo_by_default),
     ]);
 }
 
@@ -254,4 +255,23 @@ fn window_starts_without_gtk_warnings() {
     assert!(out.status.success(), "child failed: {out:?}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("WARNING"), "GTK printed warnings:\n{stderr}");
+}
+
+/// The CPU renderer starts faster and loads no GPU driver; a renderer the user
+/// chose with GSK_RENDERER still wins.
+fn binary_draws_with_cairo_by_default() {
+    let stderr = |renderer: Option<&str>| {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_opal"));
+        cmd.env("OPAL_BENCH", "startup").env("GSK_DEBUG", "renderer").env_remove("GSK_RENDERER");
+        if let Some(r) = renderer {
+            cmd.env("GSK_RENDERER", r);
+        }
+        let out = cmd.output().expect("opal runs");
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let default = stderr(None);
+    assert!(default.contains("Using renderer 'GskCairoRenderer'"), "{default}");
+    let chosen = stderr(Some("vulkan"));
+    assert!(chosen.contains("GSK_RENDERER=vulkan set"), "{chosen}");
 }
