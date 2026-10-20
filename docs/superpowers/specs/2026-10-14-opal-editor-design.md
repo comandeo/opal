@@ -149,7 +149,9 @@ theme = light
 - Rust (edition 2024), GTK4 через `gtk4-rs` (минимум GTK 4.10 — нужны
   `FileDialog`, `AlertDialog`, `UriLauncher`).
 - Разбор Markdown — `pulldown-cmark` (без feature `html`; включены
-  `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS`): даёт байтовые диапазоны для
+  `ENABLE_STRIKETHROUGH`, `ENABLE_TASKLISTS` и
+  `ENABLE_YAML_STYLE_METADATA_BLOCKS` — чтобы YAML-шапка оставалась обычным
+  текстом, а не линией и заголовком): даёт байтовые диапазоны для
   каждого события (`into_offset_iter`).
 - Других зависимостей во время выполнения нет. Конфиг разбирается своим
   кодом. Для тестов допустима dev-зависимость `tempfile`.

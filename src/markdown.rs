@@ -51,6 +51,8 @@ pub fn parse(text: &str) -> Vec<Element> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+    // Front matter (`---` … `---` at the very start) stays plain text.
+    options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
     let mut out: Vec<Element> = Vec::new();
     let mut open: Vec<Open> = Vec::new();
@@ -479,6 +481,14 @@ mod tests {
     #[test]
     fn indented_code_block_has_no_markers() {
         assert_eq!(view("    code\n"), vec![(Kind::CodeBlock, "code\n", vec![])]);
+    }
+
+    #[test]
+    fn yaml_front_matter_is_plain_text() {
+        assert_eq!(view("---\ntitle: x\n---\n\n# H"), vec![(Kind::Heading(1), "# H", vec!["# "])]);
+        assert_eq!(view("---\ntitle: x\n...\ntext"), vec![]);
+        // Only at the very start: further down `---` stays a rule.
+        assert_eq!(view("text\n\n---\n\nmore"), vec![(Kind::Rule, "---", vec!["---"])]);
     }
 
     #[test]
