@@ -1,6 +1,7 @@
 //! The Markdown text view: styling, hidden markup, typewriter scrolling.
 
 mod imp;
+mod margins;
 mod tags;
 
 use std::ops::Range;
@@ -31,6 +32,9 @@ impl OpalView {
     fn setup(&self, config: &Config) {
         let imp = self.imp();
         self.set_wrap_mode(gtk::WrapMode::WordChar);
+        // Typewriter scrolling must be instant; GTK animates `scroll_to_mark`
+        // through the scrolled window's adjustment unless animations are off.
+        self.settings().set_gtk_enable_animations(false);
         self.add_css_class("opal");
         let font = pango::FontDescription::from_string(&config.font);
         tags::install_font_css(&font);

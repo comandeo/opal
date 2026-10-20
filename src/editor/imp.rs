@@ -44,5 +44,10 @@ impl ObjectSubclass for OpalView {
 }
 
 impl ObjectImpl for OpalView {}
-impl WidgetImpl for OpalView {}
+impl WidgetImpl for OpalView {
+    fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+        self.parent_size_allocate(width, height, baseline);
+        self.obj().update_margins(width, height);
+    }
+}
 impl TextViewImpl for OpalView {}

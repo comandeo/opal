@@ -24,6 +24,8 @@ fn main() {
         ("vertical_move_lands_on_text", vertical_move_lands_on_text),
         ("restyle_is_fast", restyle_is_fast),
         ("large_paste_does_not_hang", large_paste_does_not_hang),
+        ("column_is_centred", column_is_centred),
+        ("typewriter_keeps_cursor_line_centred", typewriter_keeps_cursor_line_centred),
     ]);
 }
 
@@ -210,4 +212,41 @@ fn large_paste_does_not_hang() {
     let limit = if cfg!(debug_assertions) { 30 } else { 2 };
     assert!(took < Duration::from_secs(limit), "too slow: {took:?}");
     assert_eq!(view.text().len(), "start\n".len() + text.len());
+}
+
+fn column_is_centred() {
+    let view = view_with("text");
+    let window = common::show(&view);
+    let expected = opal::layout::side_margin(view.width(), 70, view.char_width());
+    assert_eq!(view.left_margin(), expected);
+    assert_eq!(view.right_margin(), expected);
+    common::settle();
+    assert_eq!(view.left_margin(), expected, "margins must settle, not oscillate");
+    window.destroy();
+}
+
+fn typewriter_keeps_cursor_line_centred() {
+    let text: String = (0..300).map(|i| format!("строка {i}\n")).collect();
+    let view = view_with(&text); // typewriter is on by default
+    let window = common::show(&view);
+    let buffer = view.buffer();
+    for line in [150, 0, 299] {
+        buffer.place_cursor(&buffer.iter_at_line(line).expect("line exists"));
+        common::settle();
+        let loc = view.iter_location(&buffer.iter_at_offset(cursor(&view)));
+        let visible = view.visible_rect();
+        let line_centre = loc.y() + loc.height() / 2;
+        let view_centre = visible.y() + visible.height() / 2;
+        assert!(
+            (line_centre - view_centre).abs() <= loc.height(),
+            "line {line}: line centre {line_centre}, view centre {view_centre}"
+        );
+    }
+    view.set_typewriter(false);
+    common::settle();
+    assert_eq!(view.top_margin(), 2 * view.line_height());
+    view.set_typewriter(true);
+    common::settle();
+    assert!(view.top_margin() > 2 * view.line_height());
+    window.destroy();
 }
