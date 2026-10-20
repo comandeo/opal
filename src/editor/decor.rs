@@ -6,6 +6,7 @@ use gtk::{gdk, gio, graphene};
 
 use super::OpalView;
 use crate::markdown::Kind;
+use crate::restyle::Style;
 
 /// Space between a drawn glyph and the text it precedes.
 const GLYPH_GAP: i32 = 6;
@@ -54,12 +55,12 @@ impl OpalView {
                     snapshot.append_color(&palette.line, &graphene::Rect::new(side, middle, column, 1.0));
                 }
                 Kind::ListItem { ordered: false } if above && hidden => {
-                    self.draw_glyph(snapshot, "•", &iter(e.markers[0].range.start), &palette.glyph);
+                    self.draw_glyph(snapshot, "•", &self.text_start(iter(e.range.start)), &palette.glyph);
                 }
                 Kind::Task { checked } if above && hidden => {
                     let marker = &e.markers[0].range;
                     let glyph = if *checked { "☑" } else { "☐" };
-                    let rect = self.draw_glyph(snapshot, glyph, &iter(marker.start), &palette.glyph);
+                    let rect = self.draw_glyph(snapshot, glyph, &self.text_start(iter(e.range.start)), &palette.glyph);
                     let bracket = styler.text()[marker.clone()].find('[').unwrap_or(0);
                     imp.checkboxes.borrow_mut().push((rect, marker.start + bracket + 1));
                 }
@@ -68,9 +69,20 @@ impl OpalView {
         }
     }
 
-    /// Draws `glyph` left of `at`, the first char of a hidden marker: the text
-    /// after the marker is drawn there. (GTK reports wrong positions for chars
-    /// that follow hidden text, so `at` must not be one of them.)
+    /// Steps back from a list item's start over hidden markup on its line (e.g.
+    /// the `> ` of a quote): the item's text is drawn where that run begins, and
+    /// GTK reports wrong positions for chars that follow hidden text.
+    fn text_start(&self, mut at: gtk::TextIter) -> gtk::TextIter {
+        let hidden = self.imp().tags.get().expect("tags are created in setup").get(Style::Hidden);
+        let mut prev = at.clone();
+        while prev.backward_char() && prev.char() != '\n' && prev.has_tag(hidden) {
+            at = prev.clone();
+        }
+        at
+    }
+
+    /// Draws `glyph` left of `at`, the start of a hidden run or of visible text
+    /// (positions GTK reports correctly).
     fn draw_glyph(&self, snapshot: &gtk::Snapshot, glyph: &str, at: &gtk::TextIter, color: &gdk::RGBA) -> gdk::Rectangle {
         let loc = self.iter_location(at);
         let layout = self.create_pango_layout(Some(glyph));

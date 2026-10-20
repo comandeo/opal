@@ -29,6 +29,7 @@ fn main() {
         ("decorations_render", decorations_render),
         ("checkbox_toggles", checkbox_toggles),
         ("link_lookup", link_lookup),
+        ("glyphs_sit_left_of_the_text", glyphs_sit_left_of_the_text),
     ]);
 }
 
@@ -291,4 +292,26 @@ fn link_lookup() {
     assert_eq!(view.link_at(6).as_deref(), Some("http://example.org"));
     assert_eq!(view.link_at(42).as_deref(), Some("me@x.org"));
     assert_eq!(view.link_at(1), None);
+}
+
+fn glyphs_sit_left_of_the_text() {
+    // Hidden markup before the item (`> `), and a visible number before the box.
+    let text = "> - пункт в цитате\n> - [ ] задача в цитате\n\n1. [ ] нумерованная\n\nконец";
+    let view = view_with(text);
+    let window = common::show(&view);
+    place(&view, view.buffer().char_count());
+    common::settle();
+    let path = concat!(env!("CARGO_TARGET_TMPDIR"), "/opal-glyphs.png");
+    common::save_png(&view, path);
+    println!("    screenshot: {path}");
+    let buffer = view.buffer();
+    let boxes = view.checkbox_rects();
+    assert_eq!(boxes.len(), 2);
+    for (line, (rect, _)) in [1, 3].into_iter().zip(boxes) {
+        // The first char of a line is reported correctly even when hidden.
+        let text_x = view.iter_location(&buffer.iter_at_line(line).expect("line exists")).x();
+        let right = rect.x() + rect.width();
+        assert!(right <= text_x, "line {line}: the box ends at {right}, the text starts at {text_x}");
+    }
+    window.destroy();
 }
