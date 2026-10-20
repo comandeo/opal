@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=opal
+GenericName=Markdown-редактор
+GenericName[en]=Markdown editor
+Comment=Минималистичный редактор Markdown для письма
+Comment[en]=Minimalist Markdown editor for writing
+Exec=@BINDIR@/opal %f
+Icon=opal.Editor
+Terminal=false
+StartupNotify=true
+StartupWMClass=opal.Editor
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;md;text;editor;writing;заметки;текст;редактор;

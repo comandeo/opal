@@ -7,9 +7,10 @@
 Debian: `sudo apt install libgtk-4-dev pkg-config` · FreeBSD: `pkg install gtk4 rust pkgconf`
 
 ```
-cargo build --release
-cp target/release/opal ~/.local/bin/
+scripts/install.sh
 ```
+
+Скрипт собирает opal и ставит его для текущего пользователя в `~/.local`: программу (`~/.local/bin/opal`), ярлык для меню приложений и лончеров (fuzzel, rofi, wofi…) и значок. Другое место — `scripts/install.sh /usr/local` (нужны права на запись). Удаление — в начале скрипта.
 
 ## Использование
 
