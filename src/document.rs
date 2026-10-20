@@ -16,6 +16,8 @@ pub struct Stamp {
 #[derive(Debug)]
 pub enum LoadError {
     NotUtf8,
+    /// NUL bytes: valid UTF-8, but not text, and GTK cannot hold them.
+    Binary,
     Io(io::Error),
 }
 
@@ -23,6 +25,7 @@ impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoadError::NotUtf8 => write!(f, "файл не в кодировке UTF-8"),
+            LoadError::Binary => write!(f, "в файле есть нулевые байты — это не текстовый файл"),
             LoadError::Io(e) => write!(f, "{e}"),
         }
     }
@@ -65,6 +68,9 @@ pub fn load(path: &Path) -> Result<(String, Option<Stamp>), LoadError> {
     };
     let st = stamp(path).map_err(LoadError::Io)?;
     let text = String::from_utf8(bytes).map_err(|_| LoadError::NotUtf8)?;
+    if text.contains('\0') {
+        return Err(LoadError::Binary);
+    }
     Ok((text, st))
 }
 
@@ -124,6 +130,17 @@ mod tests {
         let p = dir.path().join("bad.md");
         fs::write(&p, [0xff, 0xfe, b'a']).unwrap();
         assert!(matches!(load(&p), Err(LoadError::NotUtf8)));
+    }
+
+    #[test]
+    fn nul_bytes_are_refused() {
+        // Valid UTF-8, but GTK cannot hold it: the document would open empty
+        // and the first autosave would overwrite the file.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("nul.md");
+        fs::write(&p, b"# Notes\n\nimportant\0more\n").unwrap();
+        let err = load(&p).expect_err("a file with NUL bytes must not open");
+        assert!(err.to_string().contains("нулев"), "{err}");
     }
 
     #[test]

@@ -33,6 +33,7 @@ fn main() {
         ("external_change_is_not_overwritten", external_change_is_not_overwritten),
         ("missing_file_is_created_on_save", missing_file_is_created_on_save),
         ("non_utf8_file_is_refused", non_utf8_file_is_refused),
+        ("nul_file_is_refused", nul_file_is_refused),
         ("typewriter_action_toggles", typewriter_action_toggles),
         ("theme_follows_config", theme_follows_config),
         ("window_starts_without_gtk_warnings", window_starts_without_gtk_warnings),
@@ -137,6 +138,19 @@ fn non_utf8_file_is_refused() {
     let (window, view) = open(Some(&path));
     assert_eq!(view.text(), "");
     assert_eq!(title(&window), "Без имени — opal");
+    window.destroy();
+}
+
+fn nul_file_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nul.md");
+    fs::write(&path, b"keep\0me").unwrap();
+    let (window, view) = open(Some(&path));
+    assert_eq!(view.text(), "");
+    assert_eq!(title(&window), "Без имени — opal");
+    append(&view, "x");
+    common::pump_for(Duration::from_millis(1500));
+    assert_eq!(fs::read(&path).unwrap(), b"keep\0me", "the file must stay untouched");
     window.destroy();
 }
 
