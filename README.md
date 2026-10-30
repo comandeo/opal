@@ -1,8 +1,8 @@
 # opal
 
-Минималистичный Markdown-редактор: разметка видна только у элемента под курсором, колонка текста по центру, typewriter mode, автосохранение. GTK4, без веб-движка.
+A minimalist Markdown editor: markup is shown only for the element under the cursor, the text column is centered, typewriter mode, autosave. GTK4, no web engine.
 
-## Сборка
+## Building
 
 Debian: `sudo apt install libgtk-4-dev pkg-config` · FreeBSD: `pkg install gtk4 rust pkgconf`
 
@@ -10,41 +10,41 @@ Debian: `sudo apt install libgtk-4-dev pkg-config` · FreeBSD: `pkg install gtk4
 scripts/install.sh
 ```
 
-Скрипт собирает opal и ставит его для текущего пользователя в `~/.local`: программу (`~/.local/bin/opal`), ярлык для меню приложений и лончеров (fuzzel, rofi, wofi…) и значок. Другое место — `scripts/install.sh /usr/local` (нужны права на запись). Удаление — в начале скрипта.
+The script builds opal and installs it for the current user in `~/.local`: the program (`~/.local/bin/opal`), a launcher entry for application menus and launchers (fuzzel, rofi, wofi…) and an icon. To install elsewhere, run `scripts/install.sh /usr/local` (needs write access). How to uninstall is described at the top of the script.
 
-## Использование
+## Usage
 
-`opal файл.md` — открыть (если файла нет, он появится при первом сохранении); `opal` — новый документ.
+`opal file.md` opens a file (if it doesn't exist, it is created on the first save); `opal` starts a new document.
 
-Из терминала opal сразу возвращает управление, а окно живёт отдельно: терминал можно закрыть. Чтобы редактор работал в терминале (например, видеть его сообщения), запустите `OPAL_FOREGROUND=1 opal файл.md`.
+When started from a terminal, opal returns to the shell at once and the window lives on its own, so the terminal can be closed. To keep the editor attached to the terminal (for example, to see its messages), run `OPAL_FOREGROUND=1 opal file.md`.
 
-| Клавиши | |
+| Keys | |
 |---|---|
-| Ctrl+S | сохранить сейчас (для нового документа — выбрать имя) |
-| Ctrl+O / Ctrl+N | открыть / новый документ |
-| Ctrl+T | typewriter mode вкл/выкл |
-| Ctrl+Q | закрыть |
-| Ctrl+клик | открыть ссылку |
+| Ctrl+S | save now (for a new document, choose a name) |
+| Ctrl+O / Ctrl+N | open / new document |
+| Ctrl+T | toggle typewriter mode |
+| Ctrl+Q | close |
+| Ctrl+click | open a link |
 
-Сохранение автоматическое: через секунду после паузы и при закрытии.
+Saving is automatic: one second after you pause typing, and on close.
 
-Автозамена при наборе: `--` → `—`, `"…"` → `«…»`, кавычки внутри кавычек — `„…“`. В коде ничего не заменяется. Ctrl+Z сразу после замены возвращает набранное.
+Autocorrect while typing: `--` → `—`, `"…"` → `«…»`, quotes inside quotes → `„…“`. Nothing is replaced inside code. Ctrl+Z right after a replacement restores what you typed.
 
-## Настройки
+## Settings
 
 `~/.config/opal/config`:
 
 ```
-column_width = 70        # ширина колонки в символах
+column_width = 70        # column width in characters
 font = Serif 14
 mono_font = Monospace 12
 typewriter = true
 theme = light            # light | dark
-autocorrect = true       # автозамена тире и кавычек
+autocorrect = true       # replace dashes and quotes while typing
 ```
 
-Рисует процессором (рендерер GTK `cairo`): так окно появляется быстрее и не загружаются драйверы видеокарты. Другой рендерер можно выбрать как обычно в GTK: `GSK_RENDERER=vulkan opal`.
+opal draws on the CPU (GTK's `cairo` renderer): this way the window appears faster and no GPU drivers are loaded. Another renderer can be chosen the usual GTK way: `GSK_RENDERER=vulkan opal`.
 
-## Тесты
+## Tests
 
-`cargo test --lib` — логика; `cargo test --test gtk_editor` и `cargo test --test gtk_window` открывают окна и требуют дисплей.
+`cargo test --lib` covers the logic; `cargo test --test gtk_editor` and `cargo test --test gtk_window` open windows and need a display.
