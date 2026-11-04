@@ -34,6 +34,17 @@ fn main() {
         ("undo_brings_typed_text_back", undo_brings_typed_text_back),
         ("autocorrect_leaves_code_alone", autocorrect_leaves_code_alone),
         ("autocorrect_can_be_switched_off", autocorrect_can_be_switched_off),
+        ("hemingway_cannot_delete", hemingway_cannot_delete),
+        ("hemingway_cannot_move_the_cursor", hemingway_cannot_move_the_cursor),
+        ("hemingway_types_and_corrects", hemingway_types_and_corrects),
+        ("hemingway_cannot_undo_or_redo", hemingway_cannot_undo_or_redo),
+        ("hemingway_drops_the_selection", hemingway_drops_the_selection),
+        ("hemingway_cannot_select_all", hemingway_cannot_select_all),
+        ("hemingway_cannot_overwrite", hemingway_cannot_overwrite),
+        ("hemingway_mouse_does_not_reach_the_text", hemingway_mouse_does_not_reach_the_text),
+        ("hemingway_has_no_context_menu", hemingway_has_no_context_menu),
+        ("hemingway_opens_documents_at_the_end", hemingway_opens_documents_at_the_end),
+        ("hemingway_brings_typewriter_mode", hemingway_brings_typewriter_mode),
     ]);
 }
 
@@ -369,4 +380,209 @@ fn autocorrect_can_be_switched_off() {
     view.load_text("");
     type_keys(&view, "-- \"");
     assert_eq!(view.text(), "-- \"");
+}
+
+fn hemingway_cannot_delete() {
+    let view = view_with("один два три");
+    place(&view, 8);
+    view.set_hemingway(true);
+    view.emit_backspace();
+    view.emit_delete_from_cursor(gtk::DeleteType::Chars, 1);
+    view.emit_delete_from_cursor(gtk::DeleteType::Chars, -1);
+    view.emit_delete_from_cursor(gtk::DeleteType::WordEnds, -1);
+    view.emit_delete_from_cursor(gtk::DeleteType::Paragraphs, 1);
+    assert_eq!(view.text(), "один два три");
+    view.set_hemingway(false);
+    view.emit_backspace();
+    assert_eq!(view.text(), "один дв три");
+}
+
+fn hemingway_cannot_move_the_cursor() {
+    let view = view_with("один **два** три\n\nвторая строка\n\nтретья");
+    let window = common::show(&view);
+    place(&view, 8);
+    view.set_hemingway(true);
+    let steps = [
+        gtk::MovementStep::LogicalPositions,
+        gtk::MovementStep::VisualPositions,
+        gtk::MovementStep::Words,
+        gtk::MovementStep::DisplayLines,
+        gtk::MovementStep::DisplayLineEnds,
+        gtk::MovementStep::Paragraphs,
+        gtk::MovementStep::ParagraphEnds,
+        gtk::MovementStep::Pages,
+        gtk::MovementStep::BufferEnds,
+        gtk::MovementStep::HorizontalPages,
+    ];
+    for step in steps {
+        for count in [1, -1] {
+            for extend in [false, true] {
+                view.emit_move_cursor(step, count, extend);
+                assert_eq!(cursor(&view), 8, "{step:?} by {count}, extend {extend}");
+                assert!(!view.buffer().has_selection(), "{step:?} by {count}, extend {extend}");
+            }
+        }
+    }
+    view.set_hemingway(false);
+    view.emit_move_cursor(gtk::MovementStep::BufferEnds, 1, false);
+    assert_eq!(cursor(&view), 39);
+    window.destroy();
+}
+
+fn hemingway_types_and_corrects() {
+    let view = view_with("начало конец");
+    place(&view, 7);
+    view.set_hemingway(true);
+    type_keys(&view, "да -- \"нет\"\n");
+    view.emit_insert_at_cursor("ещё ");
+    assert_eq!(view.text(), "начало да — «нет»\nещё конец");
+}
+
+fn hemingway_cannot_undo_or_redo() {
+    let view = view_with("");
+    let buffer = view.buffer();
+    type_keys(&view, "абв");
+    view.set_hemingway(true);
+    buffer.undo();
+    let _ = WidgetExt::activate_action(&view, "text.undo", None);
+    assert_eq!(view.text(), "абв");
+    view.set_hemingway(false);
+    buffer.undo();
+    assert_eq!(view.text(), "", "the history outlives the mode");
+    view.set_hemingway(true);
+    buffer.redo();
+    let _ = WidgetExt::activate_action(&view, "text.redo", None);
+    assert_eq!(view.text(), "");
+    view.set_hemingway(false);
+    buffer.redo();
+    assert_eq!(view.text(), "абв");
+    // A blocked undo must leave autocorrect working (it is off during a replay).
+    view.set_hemingway(true);
+    buffer.undo();
+    type_keys(&view, " --");
+    assert_eq!(view.text(), "абв —");
+}
+
+fn hemingway_drops_the_selection() {
+    let view = view_with("абвгд");
+    let buffer = view.buffer();
+    buffer.select_range(&buffer.iter_at_offset(1), &buffer.iter_at_offset(3));
+    view.set_hemingway(true);
+    assert!(!buffer.has_selection());
+    assert_eq!(cursor(&view), 1);
+    type_keys(&view, "ж");
+    assert_eq!(view.text(), "ажбвгд", "typing must not replace what was selected");
+}
+
+fn hemingway_cannot_select_all() {
+    let view = view_with("абвгд");
+    let buffer = view.buffer();
+    place(&view, 2);
+    view.set_hemingway(true);
+    view.emit_select_all(true);
+    assert!(!buffer.has_selection());
+    view.set_hemingway(false);
+    view.emit_select_all(true);
+    assert!(buffer.has_selection());
+}
+
+fn hemingway_cannot_overwrite() {
+    let view = view_with("абв");
+    view.set_overwrite(true);
+    view.set_hemingway(true);
+    assert!(!view.overwrites(), "overwrite mode ends with the mode's start");
+    view.emit_toggle_overwrite();
+    assert!(!view.overwrites(), "the Insert key must not bring it back");
+}
+
+/// What a pointer at the middle of the view lands on.
+fn picked_at_middle(view: &OpalView) -> gtk::Widget {
+    let scroller = view.parent().expect("the view is in a scrolled window");
+    let (x, y) = (scroller.width() as f64 / 2.0, scroller.height() as f64 / 2.0);
+    scroller.pick(x, y, gtk::PickFlags::DEFAULT).expect("the scrolled window itself at least")
+}
+
+fn hemingway_mouse_does_not_reach_the_text() {
+    let view = view_with("текст");
+    let window = common::show(&view);
+    let on_view = |view: &OpalView| {
+        let picked = picked_at_middle(view);
+        picked == *view.upcast_ref::<gtk::Widget>() || picked.is_ancestor(view)
+    };
+    assert!(on_view(&view));
+    view.set_hemingway(true);
+    assert!(!on_view(&view), "clicks must not move the cursor");
+    view.set_hemingway(false);
+    assert!(on_view(&view));
+    window.destroy();
+}
+
+/// The view's context menu, if it is open.
+fn open_menu(view: &OpalView) -> Option<gtk::PopoverMenu> {
+    let mut child = view.first_child();
+    while let Some(widget) = child {
+        if widget.is_visible() {
+            if let Ok(menu) = widget.clone().downcast::<gtk::PopoverMenu>() {
+                return Some(menu);
+            }
+        }
+        child = widget.next_sibling();
+    }
+    None
+}
+
+fn hemingway_has_no_context_menu() {
+    let view = view_with("текст");
+    let window = common::show(&view);
+    view.set_hemingway(true);
+    let _ = WidgetExt::activate_action(&view, "menu.popup", None);
+    assert!(open_menu(&view).is_none(), "its Select All and Delete would edit the text");
+    view.set_hemingway(false);
+    WidgetExt::activate_action(&view, "menu.popup", None).unwrap();
+    open_menu(&view).expect("the menu is back").popdown();
+    window.destroy();
+}
+
+fn hemingway_opens_documents_at_the_end() {
+    let config = Config { typewriter: false, ..Config::default() };
+    let view = OpalView::new(&config);
+    let window = common::show(&view);
+    view.set_hemingway(true);
+    view.load_text("a **b**\n\nконец");
+    assert_eq!(cursor(&view), 14);
+    assert!(view.is_hidden_at(2), "the markup away from the cursor stays hidden");
+    view.load_text(&prose(20_000));
+    common::settle();
+    let scroller = view.parent().and_downcast::<gtk::ScrolledWindow>().expect("a scrolled window");
+    assert!(scroller.vadjustment().value() > 0.0, "the end of the document is on screen");
+    view.set_hemingway(false);
+    view.load_text("a **b**");
+    assert_eq!(cursor(&view), 0);
+    window.destroy();
+}
+
+fn hemingway_brings_typewriter_mode() {
+    let text: String = (0..300).map(|i| format!("строка {i}\n")).collect();
+    let view = OpalView::new(&Config { typewriter: false, ..Config::default() });
+    view.load_text(&text);
+    let window = common::show(&view);
+    let buffer = view.buffer();
+    buffer.place_cursor(&buffer.iter_at_line(150).expect("line exists"));
+    common::settle();
+    view.set_hemingway(true);
+    common::settle();
+    let loc = view.iter_location(&buffer.iter_at_offset(cursor(&view)));
+    let visible = view.visible_rect();
+    let (line_centre, view_centre) = (loc.y() + loc.height() / 2, visible.y() + visible.height() / 2);
+    assert!(
+        (line_centre - view_centre).abs() <= loc.height(),
+        "line centre {line_centre}, view centre {view_centre}"
+    );
+    view.set_hemingway(false);
+    assert!(!view.typewriter(), "it was off before the mode");
+    view.set_typewriter(true);
+    view.set_hemingway(true);
+    view.set_hemingway(false);
+    assert!(view.typewriter(), "it was on before the mode");
+    window.destroy();
 }

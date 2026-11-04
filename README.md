@@ -23,10 +23,13 @@ When started from a terminal, opal returns to the shell at once and the window l
 | Ctrl+S | save now (for a new document, choose a name) |
 | Ctrl+O / Ctrl+N | open / new document |
 | Ctrl+T | toggle typewriter mode |
+| Ctrl+H | toggle Hemingway mode |
 | Ctrl+Q | close |
 | Ctrl+click | open a link |
 
 Saving is automatic: one second after you pause typing, and on close.
+
+Hemingway mode is for writing without looking back: you can only add text at the cursor. Backspace, Delete, the arrows and the other cursor keys, undo and selecting do nothing, and the mouse only scrolls. The cursor stays where it was when the mode was turned on; a document opened during the mode starts at its end. Typewriter mode turns on with it and returns to its previous state afterwards. The window title shows the mode, which lasts until the next Ctrl+H or until the window closes.
 
 Autocorrect while typing: `--` → `—`, `"…"` → `«…»`, quotes inside quotes → `„…“`. Nothing is replaced inside code. Ctrl+Z right after a replacement restores what you typed.
 

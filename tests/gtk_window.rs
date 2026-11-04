@@ -37,6 +37,7 @@ fn main() {
         ("nul_file_is_refused", nul_file_is_refused),
         ("failed_save_still_lets_the_window_close", failed_save_still_lets_the_window_close),
         ("typewriter_action_toggles", typewriter_action_toggles),
+        ("ctrl_h_toggles_hemingway_and_the_title_shows_it", ctrl_h_toggles_hemingway_and_the_title_shows_it),
         ("theme_follows_config", theme_follows_config),
         ("window_starts_without_gtk_warnings", window_starts_without_gtk_warnings),
         ("binary_draws_with_cairo_by_default", binary_draws_with_cairo_by_default),
@@ -225,6 +226,21 @@ fn typewriter_action_toggles() {
     let before = view.typewriter();
     WidgetExt::activate_action(&window, "win.typewriter", None).unwrap();
     assert_ne!(view.typewriter(), before);
+    window.destroy();
+}
+
+fn ctrl_h_toggles_hemingway_and_the_title_shows_it() {
+    let (window, view) = open(None);
+    assert!(!view.hemingway(), "off until asked for");
+    assert_eq!(title(&window), "Без имени — opal");
+    let accels = APP.with(|app| app.accels_for_action("win.hemingway"));
+    assert_eq!(accels.iter().map(|a| a.as_str()).collect::<Vec<_>>(), ["<Control>h"]);
+    WidgetExt::activate_action(&window, "win.hemingway", None).unwrap();
+    assert!(view.hemingway());
+    assert_eq!(title(&window), "Без имени — Хемингуэй — opal");
+    WidgetExt::activate_action(&window, "win.hemingway", None).unwrap();
+    assert!(!view.hemingway());
+    assert_eq!(title(&window), "Без имени — opal");
     window.destroy();
 }
 

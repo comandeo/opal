@@ -22,6 +22,10 @@ pub struct OpalView {
     pub char_width: Cell<f64>,
     pub line_height: Cell<i32>,
     pub typewriter: Cell<bool>,
+    /// Hemingway mode: the text can only be added to.
+    pub hemingway: Cell<bool>,
+    /// Typewriter mode as it was before Hemingway mode turned it on.
+    pub typewriter_before: Cell<bool>,
     /// Current side and top/bottom margins in pixels.
     pub side: Cell<i32>,
     pub vertical: Cell<i32>,
@@ -60,5 +64,31 @@ impl TextViewImpl for OpalView {
     fn snapshot_layer(&self, layer: gtk::TextViewLayer, snapshot: gtk::Snapshot) {
         self.parent_snapshot_layer(layer, snapshot.clone());
         self.obj().draw_decorations(layer, &snapshot);
+    }
+
+    // Everything the keyboard can do to the text goes through these key
+    // bindings, whatever the layout; the rest is in `hemingway.rs`.
+    fn backspace(&self) {
+        if !self.hemingway.get() {
+            self.parent_backspace();
+        }
+    }
+
+    fn delete_from_cursor(&self, type_: gtk::DeleteType, count: i32) {
+        if !self.hemingway.get() {
+            self.parent_delete_from_cursor(type_, count);
+        }
+    }
+
+    fn move_cursor(&self, step: gtk::MovementStep, count: i32, extend_selection: bool) {
+        if !self.hemingway.get() {
+            self.parent_move_cursor(step, count, extend_selection);
+        }
+    }
+
+    fn toggle_overwrite(&self) {
+        if !self.hemingway.get() {
+            self.parent_toggle_overwrite();
+        }
     }
 }

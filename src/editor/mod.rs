@@ -1,6 +1,7 @@
 //! The Markdown text view: styling, hidden markup, typewriter scrolling.
 
 mod decor;
+mod hemingway;
 mod imp;
 mod margins;
 mod tags;
@@ -54,11 +55,13 @@ impl OpalView {
         self.connect_buffer_signals();
         self.connect_mouse_tracking();
         self.connect_clicks();
+        self.connect_hemingway();
         imp.autocorrect.set(config.autocorrect);
         self.connect_autocorrect();
     }
 
-    /// Replaces the whole text: no undo history, cursor at the start, unmodified.
+    /// Replaces the whole text: no undo history, unmodified, cursor at the start
+    /// (in Hemingway mode at the end: it cannot be moved there afterwards).
     pub fn load_text(&self, text: &str) {
         let imp = self.imp();
         let buffer = self.buffer();
@@ -66,9 +69,11 @@ impl OpalView {
         buffer.begin_irreversible_action();
         buffer.set_text(text);
         buffer.end_irreversible_action();
-        buffer.place_cursor(&buffer.start_iter());
+        let at_end = imp.hemingway.get();
+        buffer.place_cursor(&if at_end { buffer.end_iter() } else { buffer.start_iter() });
         imp.loading.set(false);
-        let ops = imp.styler.borrow_mut().reset(text, 0..0);
+        let cursor = if at_end { text.len() } else { 0 };
+        let ops = imp.styler.borrow_mut().reset(text, cursor..cursor);
         *imp.index.borrow_mut() = CharIndex::new(text);
         self.apply(&ops);
         buffer.set_modified(false);

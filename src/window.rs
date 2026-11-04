@@ -135,6 +135,10 @@ fn install_actions(ui: &Rc<Ui>, app: &gtk::Application) {
     add("open", "<Control>o", |ui| finish_document(ui, open_dialog));
     add("new", "<Control>n", |ui| finish_document(ui, |ui| show_document(ui, None, None, "")));
     add("typewriter", "<Control>t", |ui| ui.view.set_typewriter(!ui.view.typewriter()));
+    add("hemingway", "<Control>h", |ui| {
+        ui.view.set_hemingway(!ui.view.hemingway());
+        update_title(ui);
+    });
     add("close", "<Control>q", |ui| ui.window.close());
 }
 
@@ -159,7 +163,9 @@ fn update_title(ui: &Ui) {
     let unsaved =
         ui.view.buffer().is_modified() && (path.is_none() || ui.failed.get() || ui.paused.get());
     let mark = if unsaved { "• " } else { "" };
-    ui.window.set_title(Some(&format!("{mark}{name} — opal")));
+    // Keys that silently do nothing look like a hang unless the mode is shown.
+    let mode = if ui.view.hemingway() { " — Хемингуэй" } else { "" };
+    ui.window.set_title(Some(&format!("{mark}{name}{mode} — opal")));
 }
 
 fn alert(ui: &Ui, message: &str, detail: &str) {
